@@ -90,16 +90,44 @@ func main() {
 			"https://etiql-checkout-staging-a62191cd7dc2.herokuapp.com",
 		}
 		
+		// Add middleware to block direct browser access
+		router.Use(func(c *gin.Context) {
+			origin := c.GetHeader("Origin")
+			referer := c.GetHeader("Referer")
+			userAgent := c.GetHeader("User-Agent")
+			
+			fmt.Printf("=== REQUEST DEBUG ===\n")
+			fmt.Printf("Method: %s\n", c.Request.Method)
+			fmt.Printf("Path: %s\n", c.Request.URL.Path)
+			fmt.Printf("Origin: '%s'\n", origin)
+			fmt.Printf("Referer: '%s'\n", referer)
+			fmt.Printf("User-Agent: '%s'\n", userAgent)
+			fmt.Printf("====================\n")
+			
+			// Block direct browser navigation (no origin header)
+			if origin == "" && c.Request.Method == "GET" {
+				fmt.Printf("BLOCKING: Direct browser access detected (no origin header)\n")
+				c.AbortWithStatusJSON(403, gin.H{
+					"error": "Direct access not allowed",
+					"message": "This API can only be accessed from authorized applications",
+				})
+				return
+			}
+			
+			c.Next()
+		})
+		
 		router.Use(cors.New(cors.Config{
 			AllowOriginFunc: func(origin string) bool {
+				fmt.Printf("CORS CHECK: Origin='%s'\n", origin)
 				// Check exact matches
 				for _, allowedOrigin := range allowedOrigins {
 					if allowedOrigin == origin {
-						fmt.Printf("CORS: Allowing origin: %s\n", origin)
+						fmt.Printf("CORS: ALLOWING origin: %s\n", origin)
 						return true
 					}
 				}
-				fmt.Printf("CORS: Blocking origin: %s\n", origin)
+				fmt.Printf("CORS: BLOCKING origin: %s\n", origin)
 				return false
 			},
 			AllowMethods: []string{"GET", "POST", "PUT", "DELETE", "OPTIONS", "HEAD"},
