@@ -3,16 +3,13 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"net/http"
 	"os"
-	"strings"
 	"time"
 
 	"cloud.google.com/go/bigquery"
 	"github.com/gin-gonic/gin"
-	"golang.org/x/oauth2/google"
 	"google.golang.org/api/option"
 )
 
@@ -39,95 +36,27 @@ type BigQueryOrderItem struct {
 	Quantity    int64  `bigquery:"quantity"`
 }
 
-func createCredentialsFromEnv() (option.ClientOption, error) {
-	// Check if all required environment variables are present
-	projectID := os.Getenv("GOOGLE_PROJECT_ID")
-	privateKeyID := os.Getenv("GOOGLE_PRIVATE_KEY_ID")
-	privateKey := os.Getenv("GOOGLE_PRIVATE_KEY")
-	clientEmail := os.Getenv("GOOGLE_CLIENT_EMAIL")
-	clientID := os.Getenv("GOOGLE_CLIENT_ID")
 
-	if projectID == "" || privateKeyID == "" || privateKey == "" || clientEmail == "" || clientID == "" {
-		return nil, fmt.Errorf("missing required environment variables for service account")
-	}
-
-	// Fix private key formatting - replace literal \n with actual newlines
-	privateKey = strings.ReplaceAll(privateKey, "\\n", "\n")
-
-	// Create service account JSON from environment variables
-	serviceAccountJSON := map[string]string{
-		"type":                        "service_account",
-		"project_id":                  projectID,
-		"private_key_id":              privateKeyID,
-		"private_key":                 privateKey,
-		"client_email":                clientEmail,
-		"client_id":                   clientID,
-		"auth_uri":                    "https://accounts.google.com/o/oauth2/auth",
-		"token_uri":                   "https://oauth2.googleapis.com/token",
-		"auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
-		"client_x509_cert_url":        fmt.Sprintf("https://www.googleapis.com/robot/v1/metadata/x509/%s", clientEmail),
-		"universe_domain":             "googleapis.com",
-	}
-
-	// Convert to JSON bytes
-	jsonBytes, err := json.Marshal(serviceAccountJSON)
-	if err != nil {
-		return nil, fmt.Errorf("failed to marshal service account JSON: %v", err)
-	}
-
-	// Create credentials from JSON with broader scopes
-	scopes := []string{
-		"https://www.googleapis.com/auth/bigquery",
-		"https://www.googleapis.com/auth/bigquery.readonly",
-		"https://www.googleapis.com/auth/cloud-platform",
-	}
-	creds, err := google.CredentialsFromJSON(context.Background(), jsonBytes, scopes...)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create credentials from JSON: %v", err)
-	}
-
-	return option.WithCredentials(creds), nil
-}
 
 func main() {
 	// Initialize BigQuery client
 	ctx := context.Background()
 	var err error
 
-	// Check if we should force ADC
-	forceADC := os.Getenv("FORCE_ADC") == "true"
-	
 	serviceAccountPath := os.Getenv("GOOGLE_APPLICATION_CREDENTIALS")
-	if serviceAccountPath == "" && !forceADC {
+	if serviceAccountPath == "" {
 		if os.Getenv("ENV") == "production" {
-			// Production path - same as working JS API
-			serviceAccountPath = "/shared/volumes/a9e10/service_account_dbt.json"
+			// Production path for new service account
+			serviceAccountPath = "/shared/volumes/a9e10/golang-api-bigquery.json"
 		} else {
 			// Default to local path for development
-			serviceAccountPath = "/Users/roberto/Code/Partners/Etiql/service_accounts/service_account_dbt.json"
+			serviceAccountPath = "./golang-api-bigquery.json"
 		}
 	}
 
-	if forceADC {
-		fmt.Println("Using Application Default Credentials (FORCE_ADC=true)")
-		bqClient, err = bigquery.NewClient(ctx, "metal-force-400307",
-			option.WithScopes("https://www.googleapis.com/auth/bigquery"))
-		if err != nil {
-			panic(fmt.Sprintf("Failed to create BigQuery client with ADC: %v", err))
-		}
-		fmt.Println("BigQuery client created successfully with ADC")
-	} else if credOption, err := createCredentialsFromEnv(); err == nil {
-		fmt.Printf("Using environment variables for service account: %s\n", os.Getenv("GOOGLE_CLIENT_EMAIL"))
-		bqClient, err = bigquery.NewClient(ctx, "metal-force-400307", credOption)
-		if err != nil {
-			panic(fmt.Sprintf("Failed to create BigQuery client with env credentials: %v", err))
-		}
-		fmt.Println("BigQuery client created successfully with env vars")
-	} else {
-		fmt.Printf("Using service account file: %s\n", serviceAccountPath)
-		bqClient, err = bigquery.NewClient(ctx, "metal-force-400307", 
-			option.WithCredentialsFile(serviceAccountPath))
-	}
+	fmt.Printf("Using service account file: %s\n", serviceAccountPath)
+	bqClient, err = bigquery.NewClient(ctx, "metal-force-400307", 
+		option.WithCredentialsFile(serviceAccountPath))
 
 	if err != nil {
 		panic(fmt.Sprintf("Failed to create BigQuery client: %v", err))
