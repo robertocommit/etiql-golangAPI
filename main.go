@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net"
 	"net/http"
 	"os"
 	"time"
@@ -39,7 +40,30 @@ type BigQueryOrderItem struct {
 
 
 
+func getServerIP() string {
+	// Try to get external IP by connecting to a remote address
+	conn, err := net.Dial("udp", "8.8.8.8:80")
+	if err != nil {
+		return "unknown"
+	}
+	defer conn.Close()
+	
+	localAddr := conn.LocalAddr().(*net.UDPAddr)
+	return localAddr.IP.String()
+}
+
 func main() {
+	// Log server information
+	fmt.Println("=== SERVER STARTUP ===")
+	fmt.Printf("Server IP: %s\n", getServerIP())
+	fmt.Printf("Environment: %s\n", os.Getenv("ENV"))
+	fmt.Printf("Port: %s\n", os.Getenv("PORT"))
+	
+	// Get hostname
+	if hostname, err := os.Hostname(); err == nil {
+		fmt.Printf("Hostname: %s\n", hostname)
+	}
+	
 	// Initialize BigQuery client
 	ctx := context.Background()
 	var err error
