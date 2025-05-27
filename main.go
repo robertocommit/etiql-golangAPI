@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 
 	"cloud.google.com/go/bigquery"
@@ -49,6 +50,12 @@ func createCredentialsFromEnv() (option.ClientOption, error) {
 	if projectID == "" || privateKeyID == "" || privateKey == "" || clientEmail == "" || clientID == "" {
 		return nil, fmt.Errorf("missing required environment variables for service account")
 	}
+
+	// Fix private key formatting - replace literal \n with actual newlines
+	privateKey = strings.ReplaceAll(privateKey, "\\n", "\n")
+	
+	fmt.Printf("Private key starts with: %s...\n", privateKey[:50])
+	fmt.Printf("Private key length: %d characters\n", len(privateKey))
 
 	// Create service account JSON from environment variables
 	serviceAccountJSON := map[string]string{
