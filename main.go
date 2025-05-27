@@ -61,14 +61,7 @@ func main() {
 	ctx := context.Background()
 	var err error
 
-	serviceAccountPath := os.Getenv("GOOGLE_APPLICATION_CREDENTIALS")
-	if serviceAccountPath == "" {
-		if os.Getenv("ENV") == "production" {
-			serviceAccountPath = "/shared/volumes/a21e22/golang-api-bigquery.json"
-		} else {
-			serviceAccountPath = "./golang-api-bigquery.json"
-		}
-	}
+	serviceAccountPath := "./golang-api-bigquery.json"
 
 	fmt.Printf("Using service account: %s\n", serviceAccountPath)
 
