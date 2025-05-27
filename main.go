@@ -1,4 +1,3 @@
-// main.go
 package main
 
 import (
@@ -28,21 +27,17 @@ type Order struct {
 }
 
 type BigQueryOrderItem struct {
-	ID          int64  `bigquery:"id"`
+	ID           int64  `bigquery:"id"`
 	DeliveryDate string `bigquery:"delivery_date"`
-	ProductID   int64  `bigquery:"product_id"`
-	SKU         string `bigquery:"sku"`
-	Size        string `bigquery:"size"`
-	Quantity    int64  `bigquery:"quantity"`
+	ProductID    int64  `bigquery:"product_id"`
+	SKU          string `bigquery:"sku"`
+	Size         string `bigquery:"size"`
+	Quantity     int64  `bigquery:"quantity"`
 }
-
-
-
-
 
 func main() {
 	fmt.Printf("Starting server - Environment: %s\n", os.Getenv("ENV"))
-	
+
 	// Initialize BigQuery client
 	ctx := context.Background()
 	var err error
@@ -57,12 +52,12 @@ func main() {
 	}
 
 	fmt.Printf("Using service account: %s\n", serviceAccountPath)
-	
+
 	if _, err := os.Stat(serviceAccountPath); os.IsNotExist(err) {
 		panic(fmt.Sprintf("Service account file does not exist at: %s", serviceAccountPath))
 	}
-	
-	bqClient, err = bigquery.NewClient(ctx, "metal-force-400307", 
+
+	bqClient, err = bigquery.NewClient(ctx, "metal-force-400307",
 		option.WithCredentialsFile(serviceAccountPath))
 
 	if err != nil {
@@ -93,8 +88,6 @@ func main() {
 	}
 }
 
-
-
 func getPurchaseOrders(c *gin.Context) {
 	fmt.Println("Purchase orders requested")
 	ctx := context.Background()
@@ -117,13 +110,13 @@ func getPurchaseOrders(c *gin.Context) {
 	if err != nil {
 		fmt.Printf("BigQuery error: %v\n", err)
 		c.JSON(http.StatusInternalServerError, gin.H{
-			"error": "Failed to query BigQuery",
+			"error":   "Failed to query BigQuery",
 			"details": err.Error(),
 		})
 		return
 	}
 
-		// Group items by order ID
+	// Group items by order ID
 	orderMap := make(map[int64]map[string][]BigQueryOrderItem)
 	itemCount := 0
 
