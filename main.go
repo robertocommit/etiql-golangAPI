@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"cloud.google.com/go/bigquery"
+	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
 	"google.golang.org/api/option"
 )
@@ -15,25 +16,6 @@ import (
 var (
 	bqClient *bigquery.Client
 )
-
-type OrderItem struct {
-	SKU      string `json:"sku"`
-	Quantity int    `json:"quantity"`
-}
-
-type Order struct {
-	EstimatedDeliveryDate string      `json:"estimated_delivery_date"`
-	Items                 []OrderItem `json:"items"`
-}
-
-type BigQueryOrderItem struct {
-	ID           int64  `bigquery:"id"`
-	DeliveryDate string `bigquery:"delivery_date"`
-	ProductID    int64  `bigquery:"product_id"`
-	SKU          string `bigquery:"sku"`
-	Size         string `bigquery:"size"`
-	Quantity     int64  `bigquery:"quantity"`
-}
 
 func main() {
 	fmt.Printf("Starting server - Environment: %s\n", os.Getenv("ENV"))
@@ -69,11 +51,34 @@ func main() {
 	gin.SetMode(gin.ReleaseMode)
 	router := gin.New()
 
+	// Configure CORS based on environment
+	if os.Getenv("ENV") == "production" {
+		// Production: restrict to specific domains
+		config := cors.Config{
+			AllowOrigins: []string{
+				"https://etiql-agent.milhos.tech",
+				"https://etiql-checkout-7f00ab87268f.herokuapp.com",
+				"https://etiql-checkout-staging-a62191cd7dc2.herokuapp.com",
+			},
+			AllowMethods: []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
+			AllowHeaders: []string{"Origin", "Content-Type", "Accept", "Authorization", "X-Requested-With"},
+			MaxAge:       12 * time.Hour,
+		}
+		router.Use(cors.New(config))
+		fmt.Println("CORS configured for production with restricted origins")
+	} else {
+		// Development: allow all origins
+		router.Use(cors.Default())
+		fmt.Println("CORS configured for development (all origins allowed)")
+	}
+
 	router.GET("/", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"message": "Server is running"})
 	})
 
 	router.GET("/purchase-orders", getPurchaseOrders)
+	router.GET("/all-purchase-orders", getAllPurchaseOrders)
+	router.GET("/sku-metrics", getSkuMetrics)
 
 	if os.Getenv("ENV") == "production" {
 		fmt.Printf("Starting server in production mode on port %s\n", os.Getenv("PORT"))
@@ -81,106 +86,15 @@ func main() {
 			panic(fmt.Sprintf("Failed to start server: %v", err))
 		}
 	} else {
-		fmt.Println("Starting server in development mode on port 8011")
-		if err := router.Run(":8011"); err != nil {
+		port := os.Getenv("PORT")
+		if port == "" {
+			port = "8011"
+		}
+		fmt.Printf("Starting server in development mode on port %s\n", port)
+		if err := router.Run(fmt.Sprintf(":%s", port)); err != nil {
 			panic(fmt.Sprintf("Failed to start server: %v", err))
 		}
 	}
 }
 
-func getPurchaseOrders(c *gin.Context) {
-	fmt.Println("Purchase orders requested")
-	ctx := context.Background()
 
-	query := bqClient.Query(`
-		SELECT 
-			id,
-			delivery_date,
-			items.product_id,
-			items.sku,
-			items.size,
-			items.quantity
-		FROM metal-force-400307.agent.purchase_orders,
-		UNNEST(items) as items
-		WHERE delivery_date >= FORMAT_DATE('%Y-%m-%d', CURRENT_DATE())
-		ORDER BY delivery_date, id, items.product_id
-	`)
-
-	it, err := query.Read(ctx)
-	if err != nil {
-		fmt.Printf("BigQuery error: %v\n", err)
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"error":   "Failed to query BigQuery",
-			"details": err.Error(),
-		})
-		return
-	}
-
-	// Group items by order ID
-	orderMap := make(map[int64]map[string][]BigQueryOrderItem)
-	itemCount := 0
-
-	for {
-		var item BigQueryOrderItem
-		err := it.Next(&item)
-		if err != nil {
-			break
-		}
-		itemCount++
-
-		if orderMap[item.ID] == nil {
-			orderMap[item.ID] = make(map[string][]BigQueryOrderItem)
-		}
-		if orderMap[item.ID][item.DeliveryDate] == nil {
-			orderMap[item.ID][item.DeliveryDate] = []BigQueryOrderItem{}
-		}
-		orderMap[item.ID][item.DeliveryDate] = append(orderMap[item.ID][item.DeliveryDate], item)
-	}
-
-	response := make(map[string]Order)
-
-	// Transform grouped data into orders
-	for orderID, deliveryDates := range orderMap {
-		for deliveryDate, items := range deliveryDates {
-			transformedOrder := transformOrderFromItems(orderID, deliveryDate, items)
-			if transformedOrder != nil {
-				orderKey := fmt.Sprintf("order_%d", orderID)
-				response[orderKey] = *transformedOrder
-			}
-		}
-	}
-
-	fmt.Printf("Returning %d orders\n", len(response))
-	c.Header("Cache-Control", "private, max-age=300")
-	c.JSON(http.StatusOK, response)
-}
-
-func transformOrderFromItems(orderID int64, deliveryDate string, items []BigQueryOrderItem) *Order {
-	if deliveryDate == "" || len(items) == 0 {
-		return nil
-	}
-
-	// Parse delivery date to ensure it's valid
-	if _, err := time.Parse("2006-01-02", deliveryDate); err != nil {
-		return nil
-	}
-
-	var orderItems []OrderItem
-	for _, item := range items {
-		if item.Quantity > 0 && item.ProductID > 0 {
-			orderItems = append(orderItems, OrderItem{
-				SKU:      fmt.Sprintf("ETIQL%d", item.ProductID),
-				Quantity: int(item.Quantity),
-			})
-		}
-	}
-
-	if len(orderItems) == 0 {
-		return nil
-	}
-
-	return &Order{
-		EstimatedDeliveryDate: deliveryDate,
-		Items:                 orderItems,
-	}
-}
