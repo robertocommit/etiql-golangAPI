@@ -51,25 +51,75 @@ func main() {
 	gin.SetMode(gin.ReleaseMode)
 	router := gin.New()
 
-	// Configure CORS based on environment
+	// Configure CORS and origin-based access control
 	if os.Getenv("ENV") == "production" {
-		// Production: restrict to specific domains
+		// Production: restrict access to specific domains
+		allowedOrigins := []string{
+			"https://etiql-agent.milhos.tech",
+			"https://etiql-checkout-7f00ab87268f.herokuapp.com",
+			"https://etiql-checkout-staging-a62191cd7dc2.herokuapp.com",
+		}
+		
+		// Origin-based access control middleware
+		router.Use(func(c *gin.Context) {
+			origin := c.GetHeader("Origin")
+			referer := c.GetHeader("Referer")
+			
+			// Allow if no origin/referer (for server-to-server calls from allowed domains)
+			if origin == "" && referer == "" {
+				c.AbortWithStatusJSON(http.StatusForbidden, gin.H{
+					"error": "Access denied: Origin required",
+				})
+				return
+			}
+			
+			// Check origin first
+			allowed := false
+			if origin != "" {
+				for _, allowedOrigin := range allowedOrigins {
+					if origin == allowedOrigin {
+						allowed = true
+						break
+					}
+				}
+			}
+			
+			// If origin not allowed, check referer
+			if !allowed && referer != "" {
+				for _, allowedOrigin := range allowedOrigins {
+					if len(referer) >= len(allowedOrigin) && referer[:len(allowedOrigin)] == allowedOrigin {
+						allowed = true
+						break
+					}
+				}
+			}
+			
+			if !allowed {
+				fmt.Printf("Access denied - Origin: %s, Referer: %s\n", origin, referer)
+				c.AbortWithStatusJSON(http.StatusForbidden, gin.H{
+					"error": "Access denied: Invalid origin",
+					"origin": origin,
+					"referer": referer,
+				})
+				return
+			}
+			
+			c.Next()
+		})
+		
+		// CORS configuration
 		config := cors.Config{
-			AllowOrigins: []string{
-				"https://etiql-agent.milhos.tech",
-				"https://etiql-checkout-7f00ab87268f.herokuapp.com",
-				"https://etiql-checkout-staging-a62191cd7dc2.herokuapp.com",
-			},
+			AllowOrigins: allowedOrigins,
 			AllowMethods: []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
 			AllowHeaders: []string{"Origin", "Content-Type", "Accept", "Authorization", "X-Requested-With"},
 			MaxAge:       12 * time.Hour,
 		}
 		router.Use(cors.New(config))
-		fmt.Println("CORS configured for production with restricted origins")
+		fmt.Println("Production mode: Access restricted to allowed origins only")
 	} else {
 		// Development: allow all origins
 		router.Use(cors.Default())
-		fmt.Println("CORS configured for development (all origins allowed)")
+		fmt.Println("Development mode: All origins allowed")
 	}
 
 	router.GET("/", func(c *gin.Context) {
