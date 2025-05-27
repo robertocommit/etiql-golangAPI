@@ -53,9 +53,6 @@ func createCredentialsFromEnv() (option.ClientOption, error) {
 
 	// Fix private key formatting - replace literal \n with actual newlines
 	privateKey = strings.ReplaceAll(privateKey, "\\n", "\n")
-	
-	fmt.Printf("Private key starts with: %s...\n", privateKey[:50])
-	fmt.Printf("Private key length: %d characters\n", len(privateKey))
 
 	// Create service account JSON from environment variables
 	serviceAccountJSON := map[string]string{
@@ -78,8 +75,13 @@ func createCredentialsFromEnv() (option.ClientOption, error) {
 		return nil, fmt.Errorf("failed to marshal service account JSON: %v", err)
 	}
 
-	// Create credentials from JSON
-	creds, err := google.CredentialsFromJSON(context.Background(), jsonBytes, "https://www.googleapis.com/auth/bigquery")
+	// Create credentials from JSON with broader scopes
+	scopes := []string{
+		"https://www.googleapis.com/auth/bigquery",
+		"https://www.googleapis.com/auth/bigquery.readonly",
+		"https://www.googleapis.com/auth/cloud-platform",
+	}
+	creds, err := google.CredentialsFromJSON(context.Background(), jsonBytes, scopes...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create credentials from JSON: %v", err)
 	}
