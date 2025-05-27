@@ -3,6 +3,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"os"
@@ -62,11 +63,19 @@ func main() {
 		
 		// Try to read the service account file to get the client email
 		if fileContent, err := os.ReadFile(serviceAccountPath); err == nil {
-			// Just log the first 200 characters to see the structure (avoid logging sensitive data)
-			if len(fileContent) > 200 {
-				fmt.Printf("Service account file preview: %s...\n", string(fileContent[:200]))
+			// Parse JSON to extract client_email
+			var serviceAccount map[string]interface{}
+			if err := json.Unmarshal(fileContent, &serviceAccount); err == nil {
+				if clientEmail, ok := serviceAccount["client_email"].(string); ok {
+					fmt.Printf("Service account email: %s\n", clientEmail)
+				} else {
+					fmt.Println("Could not find client_email in service account file")
+				}
+				if projectID, ok := serviceAccount["project_id"].(string); ok {
+					fmt.Printf("Service account project_id: %s\n", projectID)
+				}
 			} else {
-				fmt.Printf("Service account file content length: %d bytes\n", len(fileContent))
+				fmt.Printf("Could not parse service account JSON: %v\n", err)
 			}
 		} else {
 			fmt.Printf("Could not read service account file: %v\n", err)
@@ -98,6 +107,7 @@ func main() {
 		c.JSON(http.StatusOK, gin.H{"message": "Server is running"})
 	})
 
+	router.GET("/test-bigquery", testBigQuery)
 	router.GET("/purchase-orders", getPurchaseOrders)
 
 	if os.Getenv("ENV") == "production" {
@@ -111,6 +121,63 @@ func main() {
 			panic(fmt.Sprintf("Failed to start server: %v", err))
 		}
 	}
+}
+
+func testBigQuery(c *gin.Context) {
+	fmt.Println("=== Testing BigQuery access ===")
+	ctx := context.Background()
+
+	tests := []struct {
+		name  string
+		query string
+	}{
+		{"Basic query", "SELECT 1 as test_value"},
+		{"Project access", "SELECT COUNT(*) as dataset_count FROM `metal-force-400307.INFORMATION_SCHEMA.SCHEMATA`"},
+		{"Agent dataset", "SELECT COUNT(*) as table_count FROM `metal-force-400307.agent.INFORMATION_SCHEMA.TABLES`"},
+		{"Purchase orders table", "SELECT COUNT(*) as row_count FROM `metal-force-400307.agent.purchase_orders` LIMIT 1"},
+		{"Purchase orders simple", "SELECT id, delivery_date FROM `metal-force-400307.agent.purchase_orders` LIMIT 1"},
+		{"Purchase orders with items", "SELECT id, delivery_date, items FROM `metal-force-400307.agent.purchase_orders` LIMIT 1"},
+	}
+
+	results := make(map[string]interface{})
+
+	for _, test := range tests {
+		fmt.Printf("Testing: %s\n", test.name)
+		query := bqClient.Query(test.query)
+		
+		it, err := query.Read(ctx)
+		if err != nil {
+			fmt.Printf("Test '%s' failed: %v\n", test.name, err)
+			results[test.name] = map[string]interface{}{
+				"success": false,
+				"error":   err.Error(),
+			}
+			continue
+		}
+
+		// Try to read first row
+		var row map[string]interface{}
+		err = it.Next(&row)
+		if err != nil {
+			fmt.Printf("Test '%s' result error: %v\n", test.name, err)
+			results[test.name] = map[string]interface{}{
+				"success": false,
+				"error":   err.Error(),
+			}
+			continue
+		}
+
+		fmt.Printf("Test '%s' successful: %v\n", test.name, row)
+		results[test.name] = map[string]interface{}{
+			"success": true,
+			"result":  row,
+		}
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"message": "BigQuery tests completed",
+		"results": results,
+	})
 }
 
 func getPurchaseOrders(c *gin.Context) {
