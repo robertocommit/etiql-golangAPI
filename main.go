@@ -3,6 +3,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"os"
@@ -55,6 +56,37 @@ func main() {
 	}
 
 	fmt.Printf("Using service account file: %s\n", serviceAccountPath)
+	
+	// Check if file exists and read content
+	if _, err := os.Stat(serviceAccountPath); os.IsNotExist(err) {
+		panic(fmt.Sprintf("Service account file does not exist at: %s", serviceAccountPath))
+	}
+	
+	// Read and log service account file content
+	fileContent, err := os.ReadFile(serviceAccountPath)
+	if err != nil {
+		panic(fmt.Sprintf("Failed to read service account file: %v", err))
+	}
+	
+	fmt.Printf("Service account file size: %d bytes\n", len(fileContent))
+	
+	// Parse JSON to extract key info
+	var serviceAccount map[string]interface{}
+	if err := json.Unmarshal(fileContent, &serviceAccount); err != nil {
+		fmt.Printf("Failed to parse service account JSON: %v\n", err)
+		fmt.Printf("File content preview: %s\n", string(fileContent[:min(200, len(fileContent))]))
+	} else {
+		if clientEmail, ok := serviceAccount["client_email"].(string); ok {
+			fmt.Printf("Service account email: %s\n", clientEmail)
+		}
+		if projectID, ok := serviceAccount["project_id"].(string); ok {
+			fmt.Printf("Service account project: %s\n", projectID)
+		}
+		if accountType, ok := serviceAccount["type"].(string); ok {
+			fmt.Printf("Account type: %s\n", accountType)
+		}
+	}
+	
 	bqClient, err = bigquery.NewClient(ctx, "metal-force-400307", 
 		option.WithCredentialsFile(serviceAccountPath))
 
