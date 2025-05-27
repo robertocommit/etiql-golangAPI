@@ -45,8 +45,8 @@ func main() {
 	serviceAccountPath := os.Getenv("GOOGLE_APPLICATION_CREDENTIALS")
 	if serviceAccountPath == "" {
 		if os.Getenv("ENV") == "production" {
-			// Production path
-			serviceAccountPath = "/shared/volumes/a21e22/service_account_dbt.json"
+			// Production path - same as working JS API
+			serviceAccountPath = "/shared/volumes/a9e10/service_account_dbt.json"
 		} else {
 			// Default to local path for development
 			serviceAccountPath = "/Users/roberto/Code/Partners/Etiql/service_accounts/service_account_dbt.json"
