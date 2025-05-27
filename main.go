@@ -54,19 +54,41 @@ func main() {
 
 	fmt.Printf("Using service account file: %s\n", serviceAccountPath)
 	
-	// Check if service account file exists
+	// Check if service account file exists and read some info
 	if _, err := os.Stat(serviceAccountPath); os.IsNotExist(err) {
 		fmt.Printf("WARNING: Service account file does not exist at: %s\n", serviceAccountPath)
 	} else {
 		fmt.Printf("Service account file found at: %s\n", serviceAccountPath)
+		
+		// Try to read the service account file to get the client email
+		if fileContent, err := os.ReadFile(serviceAccountPath); err == nil {
+			// Just log the first 200 characters to see the structure (avoid logging sensitive data)
+			if len(fileContent) > 200 {
+				fmt.Printf("Service account file preview: %s...\n", string(fileContent[:200]))
+			} else {
+				fmt.Printf("Service account file content length: %d bytes\n", len(fileContent))
+			}
+		} else {
+			fmt.Printf("Could not read service account file: %v\n", err)
+		}
 	}
 
+	// Try to create BigQuery client with service account file first
 	bqClient, err = bigquery.NewClient(ctx, "metal-force-400307", option.WithCredentialsFile(serviceAccountPath))
 
 	if err != nil {
-		panic(fmt.Sprintf("Failed to create BigQuery client: %v", err))
+		fmt.Printf("Failed to create BigQuery client with service account file: %v\n", err)
+		fmt.Println("Attempting to use Application Default Credentials...")
+		
+		// Fallback to Application Default Credentials
+		bqClient, err = bigquery.NewClient(ctx, "metal-force-400307")
+		if err != nil {
+			panic(fmt.Sprintf("Failed to create BigQuery client with both service account and ADC: %v", err))
+		}
+		fmt.Println("BigQuery client created successfully using Application Default Credentials")
+	} else {
+		fmt.Println("BigQuery client created successfully using service account file")
 	}
-	fmt.Println("BigQuery client created successfully")
 	defer bqClient.Close()
 
 	gin.SetMode(gin.ReleaseMode)
