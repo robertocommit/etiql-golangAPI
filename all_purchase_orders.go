@@ -7,9 +7,8 @@ import (
 
 	"cloud.google.com/go/bigquery"
 	"github.com/gin-gonic/gin"
+	"google.golang.org/api/iterator"
 )
-
-
 
 func getAllPurchaseOrders(c *gin.Context) {
 	fmt.Println("All purchase orders requested")
@@ -39,28 +38,26 @@ func getAllPurchaseOrders(c *gin.Context) {
 		return
 	}
 
-	var results []map[string]interface{}
-	rowCount := 0
+	// Use map[string]bigquery.Value to preserve raw BigQuery structure
+	var results []map[string]bigquery.Value
 	for {
-		var values []bigquery.Value
-		err := it.Next(&values)
-		if err != nil {
+		var row map[string]bigquery.Value
+		err := it.Next(&row)
+		if err == iterator.Done {
 			break
 		}
-		rowCount++
-		
-		// Convert to map using schema
-		row := make(map[string]interface{})
-		schema := it.Schema
-		for i, field := range schema {
-			if i < len(values) {
-				row[field.Name] = values[i]
-			}
+		if err != nil {
+			fmt.Printf("Error reading row: %v\n", err)
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"error":   "Failed to read BigQuery results",
+				"details": err.Error(),
+			})
+			return
 		}
 		results = append(results, row)
 	}
 
-	fmt.Printf("Returning %d purchase orders\n", len(results))
+	fmt.Printf("Returning %d purchase orders in raw BigQuery format\n", len(results))
 	c.Header("Cache-Control", "private, max-age=300")
 	c.JSON(http.StatusOK, results)
 } 
