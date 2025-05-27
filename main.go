@@ -89,11 +89,18 @@ func main() {
 		}
 
 		authHeader := c.GetHeader("Authorization")
+		userAgent := c.GetHeader("User-Agent")
+		origin := c.GetHeader("Origin")
+		referer := c.GetHeader("Referer")
 		
 		fmt.Printf("=== AUTH DEBUG ===\n")
 		fmt.Printf("Method: %s\n", c.Request.Method)
 		fmt.Printf("Path: %s\n", c.Request.URL.Path)
 		fmt.Printf("Authorization Header: '%s'\n", authHeader)
+		fmt.Printf("User-Agent: '%s'\n", userAgent)
+		fmt.Printf("Origin: '%s'\n", origin)
+		fmt.Printf("Referer: '%s'\n", referer)
+		fmt.Printf("Remote Address: %s\n", c.ClientIP())
 		fmt.Printf("==================\n")
 
 		// Check for Bearer token
