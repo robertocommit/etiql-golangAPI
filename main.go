@@ -94,17 +94,12 @@ func main() {
 		router.Use(func(c *gin.Context) {
 			origin := c.GetHeader("Origin")
 			referer := c.GetHeader("Referer")
+			userAgent := c.GetHeader("User-Agent")
 			
-			// Allow if no origin/referer (for server-to-server calls from allowed domains)
-			if origin == "" && referer == "" {
-				c.AbortWithStatusJSON(http.StatusForbidden, gin.H{
-					"error": "Access denied: Origin required",
-				})
-				return
-			}
-			
-			// Check origin first
+			// Check if request is from an allowed origin
 			allowed := false
+			
+			// Check origin header (browser requests)
 			if origin != "" {
 				for _, allowedOrigin := range allowedOrigins {
 					if origin == allowedOrigin {
@@ -114,7 +109,7 @@ func main() {
 				}
 			}
 			
-			// If origin not allowed, check referer
+			// Check referer header (navigation requests)
 			if !allowed && referer != "" {
 				for _, allowedOrigin := range allowedOrigins {
 					if len(referer) >= len(allowedOrigin) && referer[:len(allowedOrigin)] == allowedOrigin {
@@ -124,8 +119,16 @@ func main() {
 				}
 			}
 			
+			// Allow server-to-server requests (no origin/referer but has user-agent)
+			// This is for your Node.js app making API calls
+			if !allowed && origin == "" && referer == "" && userAgent != "" {
+				// Allow server-to-server requests - you can add more specific checks here if needed
+				allowed = true
+				fmt.Printf("Allowing server-to-server request from User-Agent: %s\n", userAgent)
+			}
+			
 			if !allowed {
-				fmt.Printf("Access denied - Origin: %s, Referer: %s\n", origin, referer)
+				fmt.Printf("Access denied - Origin: %s, Referer: %s, User-Agent: %s\n", origin, referer, userAgent)
 				c.AbortWithStatusJSON(http.StatusForbidden, gin.H{
 					"error": "Access denied: Invalid origin",
 					"origin": origin,
