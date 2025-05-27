@@ -52,11 +52,21 @@ func main() {
 		}
 	}
 
+	fmt.Printf("Using service account file: %s\n", serviceAccountPath)
+	
+	// Check if service account file exists
+	if _, err := os.Stat(serviceAccountPath); os.IsNotExist(err) {
+		fmt.Printf("WARNING: Service account file does not exist at: %s\n", serviceAccountPath)
+	} else {
+		fmt.Printf("Service account file found at: %s\n", serviceAccountPath)
+	}
+
 	bqClient, err = bigquery.NewClient(ctx, "metal-force-400307", option.WithCredentialsFile(serviceAccountPath))
 
 	if err != nil {
 		panic(fmt.Sprintf("Failed to create BigQuery client: %v", err))
 	}
+	fmt.Println("BigQuery client created successfully")
 	defer bqClient.Close()
 
 	gin.SetMode(gin.ReleaseMode)
@@ -82,9 +92,10 @@ func main() {
 }
 
 func getPurchaseOrders(c *gin.Context) {
+	fmt.Println("=== getPurchaseOrders endpoint called ===")
 	ctx := context.Background()
 
-	query := bqClient.Query(`
+	queryString := `
 		SELECT 
 			id,
 			delivery_date,
@@ -96,23 +107,37 @@ func getPurchaseOrders(c *gin.Context) {
 		UNNEST(items) as items
 		WHERE delivery_date >= FORMAT_DATE('%Y-%m-%d', CURRENT_DATE())
 		ORDER BY delivery_date, id, items.product_id
-	`)
+	`
+	
+	fmt.Printf("Executing BigQuery query: %s\n", queryString)
+	query := bqClient.Query(queryString)
 
 	it, err := query.Read(ctx)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to query BigQuery"})
+		fmt.Printf("BigQuery error details: %v\n", err)
+		fmt.Printf("Error type: %T\n", err)
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "Failed to query BigQuery",
+			"details": err.Error(),
+		})
 		return
 	}
+	fmt.Println("BigQuery query executed successfully")
 
 	// Group items by order ID
 	orderMap := make(map[int64]map[string][]BigQueryOrderItem)
+	itemCount := 0
 
 	for {
 		var item BigQueryOrderItem
 		err := it.Next(&item)
 		if err != nil {
+			if err.Error() != "iterator done" {
+				fmt.Printf("Error reading BigQuery results: %v\n", err)
+			}
 			break
 		}
+		itemCount++
 
 		if orderMap[item.ID] == nil {
 			orderMap[item.ID] = make(map[string][]BigQueryOrderItem)
@@ -122,6 +147,9 @@ func getPurchaseOrders(c *gin.Context) {
 		}
 		orderMap[item.ID][item.DeliveryDate] = append(orderMap[item.ID][item.DeliveryDate], item)
 	}
+
+	fmt.Printf("Processed %d items from BigQuery\n", itemCount)
+	fmt.Printf("Found %d unique orders\n", len(orderMap))
 
 	response := make(map[string]Order)
 
@@ -136,6 +164,7 @@ func getPurchaseOrders(c *gin.Context) {
 		}
 	}
 
+	fmt.Printf("Final response contains %d orders\n", len(response))
 	c.Header("Cache-Control", "private, max-age=300")
 	c.JSON(http.StatusOK, response)
 }
