@@ -47,7 +47,7 @@ func main() {
 	if serviceAccountPath == "" {
 		if os.Getenv("ENV") == "production" {
 			// Production path for new service account
-			serviceAccountPath = "/shared/volumes/a9e10/golang-api-bigquery.json"
+			serviceAccountPath = "/shared/volumes/a21e22/golang-api-bigquery.json"
 		} else {
 			// Default to local path for development
 			serviceAccountPath = "./golang-api-bigquery.json"
