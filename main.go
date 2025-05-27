@@ -7,7 +7,6 @@ import (
 	"net/http"
 	"os"
 	"strings"
-	"time"
 
 	"cloud.google.com/go/bigquery"
 	"github.com/gin-contrib/cors"
@@ -81,95 +80,75 @@ func main() {
 	gin.SetMode(gin.ReleaseMode)
 	router := gin.New()
 
-	// Configure CORS
-	if env == "production" {
-		// Production: restrict access to specific hardcoded domains
-		allowedOrigins := []string{
-			"https://etiql-agent.milhos.tech",
-			"https://etiql-checkout-7f00ab87268f.herokuapp.com",
-			"https://etiql-checkout-staging-a62191cd7dc2.herokuapp.com",
-		}
-		
-		// Add middleware to block direct browser access
-		router.Use(func(c *gin.Context) {
-			origin := c.GetHeader("Origin")
-			referer := c.GetHeader("Referer")
-			userAgent := c.GetHeader("User-Agent")
-			
-			fmt.Printf("=== REQUEST DEBUG ===\n")
-			fmt.Printf("Method: %s\n", c.Request.Method)
-			fmt.Printf("Path: %s\n", c.Request.URL.Path)
-			fmt.Printf("Origin: '%s'\n", origin)
-			fmt.Printf("Referer: '%s'\n", referer)
-			fmt.Printf("User-Agent: '%s'\n", userAgent)
-			fmt.Printf("====================\n")
-			
-			// Block direct browser navigation (no origin header)
-			if origin == "" && c.Request.Method == "GET" {
-				fmt.Printf("BLOCKING: Direct browser access detected (no origin header)\n")
-				c.AbortWithStatusJSON(403, gin.H{
-					"error": "Direct access not allowed",
-					"message": "This API can only be accessed from authorized applications",
-				})
-				return
-			}
-			
+	// Bearer token authentication middleware
+	router.Use(func(c *gin.Context) {
+		// Skip auth for root endpoint
+		if c.Request.URL.Path == "/" {
 			c.Next()
-		})
+			return
+		}
+
+		authHeader := c.GetHeader("Authorization")
 		
-		router.Use(cors.New(cors.Config{
-			AllowOriginFunc: func(origin string) bool {
-				fmt.Printf("CORS CHECK: Origin='%s'\n", origin)
-				// Check exact matches
-				for _, allowedOrigin := range allowedOrigins {
-					if allowedOrigin == origin {
-						fmt.Printf("CORS: ALLOWING origin: %s\n", origin)
-						return true
-					}
-				}
-				fmt.Printf("CORS: BLOCKING origin: %s\n", origin)
-				return false
-			},
-			AllowMethods: []string{"GET", "POST", "PUT", "DELETE", "OPTIONS", "HEAD"},
-			AllowHeaders: []string{
-				"Accept",
-				"Accept-Language",
-				"Content-Type",
-				"Content-Length",
-				"Accept-Encoding",
-				"X-CSRF-Token",
-				"Authorization",
-				"Cache-Control",
-				"X-Requested-With",
-				"Origin",
-			},
-			ExposeHeaders:    []string{"Content-Length"},
-			AllowCredentials: true,
-			MaxAge:           12 * time.Hour,
-		}))
-		fmt.Println("Production mode: CORS restricted to allowed origins only")
+		fmt.Printf("=== AUTH DEBUG ===\n")
+		fmt.Printf("Method: %s\n", c.Request.Method)
+		fmt.Printf("Path: %s\n", c.Request.URL.Path)
+		fmt.Printf("Authorization Header: '%s'\n", authHeader)
+		fmt.Printf("==================\n")
+
+		// Check for Bearer token
+		if authHeader == "" {
+			fmt.Printf("AUTH: No Authorization header provided\n")
+			c.AbortWithStatusJSON(401, gin.H{
+				"error": "Unauthorized",
+				"message": "Bearer token required. Use: Authorization: Bearer YOUR_TOKEN",
+			})
+			return
+		}
+
+		// Extract token from "Bearer TOKEN"
+		if len(authHeader) < 7 || authHeader[:7] != "Bearer " {
+			fmt.Printf("AUTH: Invalid Authorization format: %s\n", authHeader)
+			c.AbortWithStatusJSON(401, gin.H{
+				"error": "Unauthorized", 
+				"message": "Invalid Authorization format. Use: Authorization: Bearer YOUR_TOKEN",
+			})
+			return
+		}
+
+		token := authHeader[7:] // Remove "Bearer " prefix
+		validToken := os.Getenv("API_TOKEN")
+		
+		if validToken == "" {
+			fmt.Printf("AUTH: No API_TOKEN environment variable set\n")
+			c.AbortWithStatusJSON(500, gin.H{
+				"error": "Server configuration error",
+				"message": "API token not configured",
+			})
+			return
+		}
+
+		if token != validToken {
+			fmt.Printf("AUTH: Invalid token provided: %s\n", token)
+			c.AbortWithStatusJSON(401, gin.H{
+				"error": "Unauthorized",
+				"message": "Invalid bearer token",
+			})
+			return
+		}
+
+		fmt.Printf("AUTH: Valid token provided, allowing access\n")
+		c.Next()
+	})
+
+	// Simple CORS for development
+	router.Use(cors.Default())
+	fmt.Println("Authentication: Bearer token required for all endpoints except /")
+	apiToken := os.Getenv("API_TOKEN")
+	if apiToken != "" {
+		fmt.Printf("API_TOKEN configured: %s\n", apiToken)
 	} else {
-		// Development: allow all origins
-		router.Use(cors.New(cors.Config{
-			AllowAllOrigins: true,
-			AllowMethods:    []string{"GET", "POST", "PUT", "DELETE", "OPTIONS", "HEAD"},
-			AllowHeaders: []string{
-				"Accept",
-				"Accept-Language",
-				"Content-Type",
-				"Content-Length",
-				"Accept-Encoding",
-				"X-CSRF-Token",
-				"Authorization",
-				"Cache-Control",
-				"X-Requested-With",
-				"Origin",
-			},
-			ExposeHeaders:    []string{"Content-Length"},
-			AllowCredentials: true,
-			MaxAge:           12 * time.Hour,
-		}))
-		fmt.Println("Development mode: All origins allowed")
+		fmt.Println("WARNING: API_TOKEN environment variable not set!")
 	}
 
 	router.GET("/", func(c *gin.Context) {
