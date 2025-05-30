@@ -165,6 +165,7 @@ func main() {
 	router.GET("/purchase-orders", getPurchaseOrders)
 	router.GET("/all-purchase-orders", getAllPurchaseOrders)
 	router.GET("/sku-metrics", getSkuMetrics)
+	router.GET("/sku-metrics/:sku_id", getSkuMetricsSingle)
 
 	if env == "production" {
 		fmt.Printf("Starting server in production mode on port %s\n", port)
